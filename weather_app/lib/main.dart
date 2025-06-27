@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
 import 'dart:convert';
 
 void main() {
@@ -31,6 +32,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
   Map<String, dynamic>? weatherData;
   bool isLoading = false;
   String? errorMessage;
+  bool isLocationLoading = false;
 
   // Replace with your OpenWeatherMap API key
   final String apiKey = '2acafb9ba3431ecf247eee6b7e9fc7ce';
@@ -38,10 +40,101 @@ class _WeatherScreenState extends State<WeatherScreen> {
   @override
   void initState() {
     super.initState();
-    // Load default city weather
-    fetchWeather('London');
+    // App starts with blank screen - no default city
   }
 
+  Future<void> fetchWeatherByLocation() async {
+    setState(() {
+      isLocationLoading = true;
+      errorMessage = null;
+    });
+
+    try {
+      // Check if location services are enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() {
+          errorMessage = 'Location services are disabled';
+          isLocationLoading = false;
+        });
+        return;
+      }
+
+      // Check location permissions
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          setState(() {
+            errorMessage = 'Location permissions are denied';
+            isLocationLoading = false;
+          });
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          errorMessage = 'Location permissions are permanently denied';
+          isLocationLoading = false;
+        });
+        return;
+      }
+
+      // Get current position
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      // Fetch weather using coordinates
+      await fetchWeatherByCoordinates(position.latitude, position.longitude);
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Failed to get location: $e';
+        isLocationLoading = false;
+      });
+    }
+  }
+
+  Future<void> fetchWeatherByCoordinates(double lat, double lon) async {
+    if (apiKey == 'YOUR_API_KEY_HERE') {
+      setState(() {
+        errorMessage = 'Please add your OpenWeatherMap API key';
+        isLocationLoading = false;
+      });
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+      errorMessage = null;
+    });
+
+    try {
+      final url = 'https://api.openweathermap.org/data/2.5/weather?lat=$lat&lon=$lon&appid=$apiKey&units=metric';
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        setState(() {
+          weatherData = json.decode(response.body);
+          isLoading = false;
+          isLocationLoading = false;
+        });
+      } else {
+        setState(() {
+          errorMessage = 'Failed to fetch weather data';
+          isLoading = false;
+          isLocationLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Failed to fetch weather data';
+        isLoading = false;
+        isLocationLoading = false;
+      });
+    }
+  }
   Future<void> fetchWeather(String cityName) async {
     if (apiKey == 'YOUR_API_KEY_HERE') {
       setState(() {
@@ -72,7 +165,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
         });
       }
     } catch (e) {
-      setState(() {
+      setState() {
         errorMessage = 'Failed to fetch weather data';
         isLoading = false;
       });
@@ -141,48 +234,84 @@ class _WeatherScreenState extends State<WeatherScreen> {
             padding: const EdgeInsets.all(20.0),
             child: Column(
               children: [
-                // Search Bar
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(25),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: Offset(0, 5),
+                // Location and Search Bar Row
+                Row(
+                  children: [
+                    // Location Button
+                    Container(
+                      margin: EdgeInsets.only(right: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(25),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 10,
+                            offset: Offset(0, 5),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search city...',
-                      prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
-                      suffixIcon: IconButton(
-                        icon: Icon(Icons.send, color: Colors.blue),
-                        onPressed: () {
-                          if (_searchController.text.isNotEmpty) {
-                            fetchWeather(_searchController.text);
-                          }
-                        },
+                      child: IconButton(
+                        icon: isLocationLoading
+                            ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                                ),
+                              )
+                            : Icon(Icons.my_location, color: Colors.blue),
+                        onPressed: isLocationLoading ? null : fetchWeatherByLocation,
+                        tooltip: 'Use current location',
                       ),
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                     ),
-                    onSubmitted: (value) {
-                      if (value.isNotEmpty) {
-                        fetchWeather(value);
-                      }
-                    },
-                  ),
+                    // Search Bar
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(25),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 10,
+                              offset: Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Search city...',
+                            prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
+                            suffixIcon: IconButton(
+                              icon: Icon(Icons.send, color: Colors.blue),
+                              onPressed: () {
+                                if (_searchController.text.isNotEmpty) {
+                                  fetchWeather(_searchController.text);
+                                }
+                              },
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                          ),
+                          onSubmitted: (value) {
+                            if (value.isNotEmpty) {
+                              fetchWeather(value);
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 
                 SizedBox(height: 40),
                 
                 // Weather Content
                 Expanded(
-                  child: isLoading
+                  child: (isLoading || isLocationLoading)
                       ? Center(
                           child: CircularProgressIndicator(
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
