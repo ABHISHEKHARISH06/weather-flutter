@@ -165,7 +165,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
         });
       }
     } catch (e) {
-      setState() {
+      setState(() {
         errorMessage = 'Failed to fetch weather data';
         isLoading = false;
       });
